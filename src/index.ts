@@ -53,6 +53,12 @@ interface CommentOptions {
   parentId?: number;
 }
 
+interface InlineCommentOptions extends CommentOptions {
+  filePath: string;
+  line: number;
+  lineType: 'ADDED' | 'REMOVED';
+}
+
 interface PullRequestInput extends RepositoryParams {
   title: string;
   description: string;
@@ -263,6 +269,24 @@ class BitbucketServer {
           }
         },
         {
+          name: 'add_comment_inline',
+          description: 'Add an inline comment (to specific lines) to the diff of a pull request for code review, feedback, questions, or discussion. Use this to provide review feedback, ask questions about specific changes, suggest improvements, or participate in code review discussions. Supports threaded conversations.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project: { type: 'string', description: 'Bitbucket project key. If omitted, uses BITBUCKET_DEFAULT_PROJECT environment variable.' },
+              repository: { type: 'string', description: 'Repository slug containing the pull request.' },
+              prId: { type: 'number', description: 'Pull request ID to comment on.' },
+              text: { type: 'string', description: 'Comment text content. Supports Markdown formatting for code blocks, links, and emphasis.' },
+              parentId: { type: 'number', description: 'ID of parent comment to reply to. Omit for top-level comments.' },
+              filePath: { type: 'string', description: 'Path to the file in the repository where the comment should be added (e.g., "src/main.py", "README.md").' },
+              line: { type: 'number', description: 'Line number in the file to attach the comment to (1-based).' },
+              lineType: { type: 'string', enum: ['ADDED', 'REMOVED'], description: 'Type of change the comment is associated with: ADDED for additions, REMOVED for deletions.' }
+            },
+            required: ['repository', 'prId', 'text', 'filePath', 'line', 'lineType']
+          }
+        },
+        {
           name: 'get_diff',
           description: 'Retrieve the code differences (diff) for a pull request showing what lines were added, removed, or modified. Use this to understand the scope of changes, review specific code modifications, or analyze the impact of proposed changes before merging.',
           inputSchema: {
@@ -462,6 +486,21 @@ class BitbucketServer {
             return await this.addComment(commentPrParams, {
               text: args.text as string,
               parentId: args.parentId as number
+            });
+          }
+
+           case 'add_comment_inline': {
+            const commentPrParams: PullRequestParams = {
+              project: getProject(args.project as string),
+              repository: args.repository as string,
+              prId: args.prId as number
+            };
+            return await this.addCommentInline(commentPrParams, {
+              text: args.text as string,
+              parentId: args.parentId as number,
+              filePath: args.filePath as string,
+              line: args.line as number,
+              lineType: args.lineType as 'ADDED' | 'REMOVED'
             });
           }
 
@@ -748,6 +787,39 @@ class BitbucketServer {
         parent: parentId ? { id: parentId } : undefined
       }
     );
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }]
+    };
+  }
+
+  private async addCommentInline(params: PullRequestParams, options: InlineCommentOptions) {
+    const { project, repository, prId } = params;
+    
+    if (!project || !repository || !prId || !options.filePath || !options.line || !options.lineType) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'Project, repository, prId, filePath, line, and lineType are required'
+      );
+    }
+    
+    const { text, parentId } = options;
+    
+    const response = await this.api.post(
+      `/projects/${project}/repos/${repository}/pull-requests/${prId}/comments`,
+      {
+        text,
+        parent: parentId ? { id: parentId } : undefined,
+        anchor: {
+          path: options.filePath,
+          lineType: options.lineType,
+          line: options.line,
+          diffType: 'EFFECTIVE',
+          fileType: 'TO',}
+      }
+    );
+
+    logger.error(response);
 
     return {
       content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }]
