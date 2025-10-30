@@ -76,6 +76,12 @@ interface ListRepositoriesOptions extends ListOptions {
   project?: string;
 }
 
+interface ListPullRequestsOptions extends RepositoryParams {
+  state?: 'OPEN' | 'MERGED' | 'DECLINED' | 'ALL';
+  startDate?: number;
+  endDate?: number;
+}
+
 interface SearchOptions extends ListOptions {
   project?: string;
   repository?: string;
@@ -159,7 +165,7 @@ class BitbucketServer {
   }
 
   private setupToolHandlers() {
-    const readOnlyTools = ['list_projects', 'list_repositories', 'get_pull_request', 'get_diff', 'get_reviews', 'get_activities', 'get_comments', 'search', 'get_file_content', 'browse_repository'];
+    const readOnlyTools = ['list_projects', 'list_repositories', 'get_pull_requests', 'get_pull_request', 'get_diff', 'get_reviews', 'get_activities', 'get_comments', 'search', 'get_file_content', 'browse_repository'];
     
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
@@ -208,6 +214,31 @@ class BitbucketServer {
           }
         },
         {
+          name: 'get_pull_requests',
+          description: 'Retrieve a list of all pull requests for a specific repository. Use this to get a comprehensive view of all open, closed, or merged pull requests, review status, and activity history. Supports filtering by date range.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project: { type: 'string', description: 'Bitbucket project key. If omitted, uses BITBUCKET_DEFAULT_PROJECT environment variable.' },
+              repository: { type: 'string', description: 'Repository slug containing the pull requests.' },
+              state: { 
+                type: 'string', 
+                enum: ['OPEN', 'MERGED', 'DECLINED', 'ALL'],
+                description: 'Filter pull requests by state: OPEN - open PRs, MERGED - merged PRs, DECLINED - declined PRs, ALL - all PRs. If omitted, defaults to OPEN.'
+              },
+              startDate: {
+                type: 'number',
+                description: 'Filter pull requests closed on or after this timestamp (in milliseconds since Unix epoch). Only applicable when state is MERGED, DECLINED, or ALL. Example: 1609459200000 for Jan 1, 2021.'
+              },
+              endDate: {
+                type: 'number',
+                description: 'Filter pull requests closed on or before this timestamp (in milliseconds since Unix epoch). Only applicable when state is MERGED, DECLINED, or ALL. Example: 1640995200000 for Jan 1, 2022.'
+              }
+            },
+            required: ['project', 'repository']
+          }
+        },
+        { 
           name: 'get_pull_request',
           description: 'Retrieve comprehensive details about a specific pull request including status, reviewers, commits, and metadata. Use this to check PR status, review progress, understand changes, or gather information before performing actions like merging or commenting.',
           inputSchema: {
@@ -445,6 +476,17 @@ class BitbucketServer {
             // Ensure project is set
             const createArgs = { ...args, project: getProject(args.project) };
             return await this.createPullRequest(createArgs);
+          }
+
+          case 'get_pull_requests': {
+            const getPrOptions: ListPullRequestsOptions = {
+              project: getProject(args.project as string),
+              repository: args.repository as string,
+              state: args.state as 'OPEN' | 'MERGED' | 'DECLINED' | 'ALL' | undefined,
+              startDate: args.startDate as number | undefined,
+              endDate: args.endDate as number | undefined
+            };
+            return await this.getPullRequests(getPrOptions);
           }
 
           case 'get_pull_request': {
@@ -697,6 +739,63 @@ class BitbucketServer {
 
     return {
       content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }]
+    };
+  }
+
+  private async getPullRequests(options: ListPullRequestsOptions) {
+    const { project, repository, state, startDate, endDate } = options;
+    
+    if (!project || !repository) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'Project and repository are required'
+      );
+    }
+    
+    const response = await this.api.get(
+      `/projects/${project}/repos/${repository}/pull-requests`,
+      {
+        params: { state }
+      }
+    );
+
+    let pullRequests = response.data.values || [];
+
+    // Filter by date range if startDate or endDate is provided
+    if ((startDate !== undefined || endDate !== undefined) && pullRequests.length > 0) {
+      pullRequests = pullRequests.filter((pr: { closedDate?: number; state: string }) => {
+        // Only filter closed PRs (MERGED or DECLINED)
+        if (pr.state !== 'MERGED' && pr.state !== 'DECLINED') {
+          return true; // Keep open PRs if state is ALL
+        }
+
+        // If PR doesn't have closedDate, exclude it
+        if (!pr.closedDate) {
+          return false;
+        }
+
+        // Check if closedDate is within the specified range
+        if (startDate !== undefined && pr.closedDate < startDate) {
+          return false;
+        }
+
+        if (endDate !== undefined && pr.closedDate > endDate) {
+          return false;
+        }
+
+        return true;
+      });
+    }
+
+    // Return filtered data in the same format as the original response
+    const filteredResponse = {
+      ...response.data,
+      values: pullRequests,
+      size: pullRequests.length
+    };
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(filteredResponse, null, 2) }]
     };
   }
 

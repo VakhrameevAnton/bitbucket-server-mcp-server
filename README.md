@@ -96,6 +96,32 @@ Parameters:
 - `targetBranch` (required): Target branch for merging
 - `reviewers`: Array of reviewer usernames
 
+### `get_pull_requests`
+
+**List all pull requests**: Retrieves a list of all pull requests for a specific repository with filtering options. Provides comprehensive view of all open, closed, merged, or declined pull requests. Supports client-side date range filtering.
+
+**Use cases:**
+- Get overview of all pull requests in a repository
+- Filter PRs by status (open, merged, declined)
+- Find PRs closed within a specific date range
+- Monitor repository activity
+- Track PR workflow and history
+- Generate reports for PRs closed in a time period
+
+Parameters:
+
+- `project`: Bitbucket project key (optional, uses BITBUCKET_DEFAULT_PROJECT if not provided)
+- `repository` (required): Repository slug
+- `state`: Filter by PR state (default: OPEN)
+  - `OPEN`: Open pull requests
+  - `MERGED`: Merged pull requests
+  - `DECLINED`: Declined pull requests
+  - `ALL`: All pull requests regardless of state
+- `startDate`: Filter PRs closed on or after this timestamp in milliseconds since Unix epoch (optional). Only applicable when state is MERGED, DECLINED, or ALL. Example: `1609459200000` for Jan 1, 2021.
+- `endDate`: Filter PRs closed on or before this timestamp in milliseconds since Unix epoch (optional). Only applicable when state is MERGED, DECLINED, or ALL. Example: `1640995200000` for Jan 1, 2022.
+
+**Note**: Date filtering is performed client-side after fetching PRs from the API, ensuring precise filtering by `closedDate` within the specified range.
+
 ### `get_pull_request`
 
 **Comprehensive PR information**: Retrieves detailed pull request information including status, reviewers, commits, and all metadata. Essential for understanding PR state before taking actions.
@@ -350,6 +376,27 @@ create_pull_request --repository "my-repo" --title "Feature: New functionality" 
 # Create a pull request with specific project
 create_pull_request --project "MYPROJECT" --repository "my-repo" --title "Bugfix: Critical issue" --sourceBranch "bugfix/critical" --targetBranch "develop" --description "Fixes critical issue #123"
 
+# List all pull requests (defaults to OPEN)
+get_pull_requests --project "MYPROJECT" --repository "my-repo"
+
+# List all merged pull requests
+get_pull_requests --project "MYPROJECT" --repository "my-repo" --state "MERGED"
+
+# List all pull requests (any state)
+get_pull_requests --project "MYPROJECT" --repository "my-repo" --state "ALL"
+
+# List pull requests closed after Jan 1, 2024
+get_pull_requests --project "MYPROJECT" --repository "my-repo" --state "MERGED" --startDate 1704067200000
+
+# List pull requests closed before Jan 1, 2024
+get_pull_requests --project "MYPROJECT" --repository "my-repo" --state "MERGED" --endDate 1704067200000
+
+# List pull requests closed in a date range (Jan 1, 2024 to Dec 31, 2024)
+get_pull_requests --project "MYPROJECT" --repository "my-repo" --state "MERGED" --startDate 1704067200000 --endDate 1735689599000
+
+# List all PRs (merged or declined) closed in Q1 2024
+get_pull_requests --project "MYPROJECT" --repository "my-repo" --state "ALL" --startDate 1704067200000 --endDate 1711929599000
+
 # Get pull request details
 get_pull_request --repository "my-repo" --prId 123
 
@@ -422,6 +469,7 @@ The server supports a read-only mode for deployments where you want to prevent a
 **Available tools in read-only mode:**
 - `list_projects` - Browse and list projects
 - `list_repositories` - Browse and list repositories  
+- `get_pull_requests` - View pull requests list
 - `get_pull_request` - View pull request details
 - `get_diff` - View code changes and diffs
 - `get_reviews` - View review history and status
