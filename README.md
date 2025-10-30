@@ -21,14 +21,6 @@ MCP (Model Context Protocol) server for Bitbucket Server Pull Request management
 
 ## Installation
 
-### Installing via Smithery
-
-To install Bitbucket Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@garc33/bitbucket-server-mcp-server):
-
-```bash
-npx -y @smithery/cli install @garc33/bitbucket-server-mcp-server --client claude
-```
-
 ### Manual Installation
 
 ```bash
